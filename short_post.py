@@ -2,6 +2,7 @@ import praw
 import requests
 from moviepy.video.io.VideoFileClip import VideoFileClip, AudioFileClip
 from pytube import YouTube
+from pytube.exceptions import AgeRestrictedError
 import pyttsx3
 import nltk
 from nltk.tokenize import sent_tokenize
@@ -61,6 +62,7 @@ def get_reddit_post(post_index = 1):
 
     post_title = post.title
     post_content = post.selftext if hasattr(post, 'selftext') else None
+    credit = f"Credit: u/{post.author} on Reddit" if post.author else None
     media_url = None
     duration = None
 
@@ -87,7 +89,7 @@ def get_reddit_post(post_index = 1):
                 break
 
     print('Got the post with title:', post_title)
-    return post_title, post_content, media_url, duration
+    return post_title, post_content, media_url, duration, credit
 
 
 def combine_reddit_video_and_audio():
@@ -138,11 +140,18 @@ def create_voiceover_and_subtitles(text):
 
 
 def download_youtube_video(video_url, youtube_video):
-    youtube = YouTube(video_url)
-    video_stream = youtube.streams.filter(file_extension="mp4", res="720p").first()
-    video_stream.download('.', filename=youtube_video)
-    print('Downloaded the youtube video.')
-    return './' + youtube_video
+    max_trials = 3
+    for _ in range(max_trials):
+        try:
+            youtube = YouTube(video_url)
+            video_stream = youtube.streams.filter(file_extension="mp4", res="720p").first()
+            video_stream.download('.', filename=youtube_video)
+            print('Downloaded the youtube video.')
+            return './' + youtube_video
+        except AgeRestrictedError:
+            print('Age restricted video, trying another one.')
+            video_url = config.VIDEO_LIST[random.randint(0, len(config.VIDEO_LIST) - 1)]
+    return None
 
 
 def create_base_video():
@@ -378,36 +387,39 @@ def clean_up(folder_path):
         os.remove(folder_path + '/' + file)
     os.rmdir(folder_path)
     os.remove('token.json')
+
     if os.path.exists(config.YOUTUBE_VIDEO):
         os.remove(config.YOUTUBE_VIDEO)
+
     print('Cleaned up the files from local.')
 
 
 def post(trial, max_trials, driver, youtube_service):
-    post_title, post_content, media_url, duration = get_reddit_post(trial)
+    post_title, post_content, media_url, duration, credit = get_reddit_post(trial)
+    title_with_credit = post_title + '\n\n' + credit if credit else post_title
     print('Duration:', duration if duration else 'None')
     print('Media url:', media_url if media_url else 'None')
     if media_url:
-        instagram_share(driver, post_title, config.HUMANLIKE, config.COMBINED_REDDIT_VIDEO_PATH)
+        instagram_share(driver, title_with_credit, config.HUMANLIKE, config.COMBINED_REDDIT_VIDEO_PATH)
         if duration < 60:
             format_video_for_shorts(config.COMBINED_REDDIT_VIDEO)
-            youtube_share(youtube_service, post_title, post_title, config.SHORTS_VIDEO)
+            youtube_share(youtube_service, post_title, title_with_credit, config.SHORTS_VIDEO)
             return True
         elif duration >= 60 and max_trials == 1:
-            youtube_share(youtube_service, post_title, post_title, config.COMBINED_REDDIT_VIDEO)
+            youtube_share(youtube_service, post_title, title_with_credit, config.COMBINED_REDDIT_VIDEO)
     else:
         if not post_content:
             return False
         duration = create_voiceover_and_subtitles(post_title + '.\n' + post_content)
         create_base_video()
         add_subtitles()
-        instagram_share(driver, post_title, config.HUMANLIKE, config.SUBTITLED_VIDEO_PATH)
+        instagram_share(driver, title_with_credit, config.HUMANLIKE, config.SUBTITLED_VIDEO_PATH)
         if duration < 60:
             format_video_for_shorts(config.SUBTITLED_VIDEO)
-            youtube_share(youtube_service, post_title, post_title, config.SHORTS_VIDEO)
+            youtube_share(youtube_service, post_title, title_with_credit, config.SHORTS_VIDEO)
             return True
         elif duration >= 60 and max_trials == 1:
-            youtube_share(youtube_service, post_title, post_title, config.SUBTITLED_VIDEO)
+            youtube_share(youtube_service, post_title, title_with_credit, config.SUBTITLED_VIDEO)
     
     return False
 
