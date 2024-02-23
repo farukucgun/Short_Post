@@ -389,6 +389,7 @@ def clean_up(folder_path):
     os.remove('token.json')
 
     if os.path.exists(config.YOUTUBE_VIDEO):
+        os.chmod(config.YOUTUBE_VIDEO, 0o777)
         os.remove(config.YOUTUBE_VIDEO)
 
     print('Cleaned up the files from local.')
@@ -404,8 +405,7 @@ def post(trial, max_trials, driver, youtube_service):
         if duration < 60:
             format_video_for_shorts(config.COMBINED_REDDIT_VIDEO)
             youtube_share(youtube_service, post_title, title_with_credit, config.SHORTS_VIDEO)
-            return True
-        elif duration >= 60 and max_trials == 1:
+        else:
             youtube_share(youtube_service, post_title, title_with_credit, config.COMBINED_REDDIT_VIDEO)
     else:
         if not post_content:
@@ -417,11 +417,10 @@ def post(trial, max_trials, driver, youtube_service):
         if duration < 60:
             format_video_for_shorts(config.SUBTITLED_VIDEO)
             youtube_share(youtube_service, post_title, title_with_credit, config.SHORTS_VIDEO)
-            return True
-        elif duration >= 60 and max_trials == 1:
+        else:
             youtube_share(youtube_service, post_title, title_with_credit, config.SUBTITLED_VIDEO)
     
-    return False
+    return True
 
 
 if __name__ == '__main__':
