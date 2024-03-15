@@ -24,6 +24,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 import random
 import socket
+import logging as log
 nltk.download('punkt')
 
 """
@@ -38,7 +39,7 @@ nltk.download('punkt')
 - use playwrigth instead of selenium
 - automate it, control it using a terminal on mobile
 - try more options for write video file
-- logging and better error handling
+- better error handling
 """
 
 ######### GLOBAL VARIABLES ##########
@@ -48,6 +49,7 @@ YOUTUBE_API_SERVICE_NAME = 'youtube'
 DRIVE_API_SERVICE_NAME = 'drive'
 API_VERSION = 'v3'
 socket.setdefaulttimeout(300) # 5 minutes of timeout for large google drive file uploads
+log.basicConfig(filename=log.log, level=log.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
 #####################################
 
 
@@ -88,7 +90,7 @@ def get_reddit_post(post_index = 1):
                 combine_reddit_video_and_audio()
                 break
 
-    print('Got the post with title:', post_title)
+    log.info('Got a post from Reddit.')
     return post_title, post_content, media_url, duration, credit
 
 
@@ -101,7 +103,7 @@ def combine_reddit_video_and_audio():
 
     video_clip = video_clip.set_audio(audio_clip)
     video_clip.write_videofile(config.COMBINED_REDDIT_VIDEO)
-    print('Combined the reddit video and audio.')
+    log.info('Combined the reddit video and audio.')
 
 
 def format_time(seconds):
@@ -135,7 +137,7 @@ def create_voiceover_and_subtitles(text):
     with open(config.SUBTITLES, 'w', encoding='utf-8') as f:
         f.writelines(subtitles)
 
-    print('Created the voiceover and subtitles.')
+    log.info('Created voiceover and subtitles.')
     return total_duration + 0.5
 
 
@@ -146,10 +148,10 @@ def download_youtube_video(video_url, youtube_video):
             youtube = YouTube(video_url)
             video_stream = youtube.streams.filter(file_extension="mp4", res="720p").first()
             video_stream.download('.', filename=youtube_video)
-            print('Downloaded the youtube video.')
+            log.info('Downloaded the youtube video.')
             return './' + youtube_video
         except AgeRestrictedError:
-            print('Age restricted video, trying another one.')
+            log.error('The video is age restricted, trying another one.')
             video_url = config.VIDEO_LIST[random.randint(0, len(config.VIDEO_LIST) - 1)]
     return None
 
@@ -166,7 +168,7 @@ def create_base_video():
     video_clip = video_clip.subclip(start_time, voiceover_clip.duration + start_time)
     video_clip = video_clip.set_audio(voiceover_clip)
     video_clip.write_videofile(config.BASE_VIDEO)
-    print('Created the base video.')
+    log.info('Created the base video.')
 
 
 def add_subtitles(input_video = config.BASE_VIDEO, output_video = config.SUBTITLED_VIDEO):
@@ -179,7 +181,7 @@ def add_subtitles(input_video = config.BASE_VIDEO, output_video = config.SUBTITL
         "-preset", "ultrafast",
         "-y", output_video
     ])
-    print('Created video with subtitles.')
+    log.info('Added subtitles to the video.')
 
 
 def format_video_for_shorts(input_video):
@@ -192,7 +194,7 @@ def format_video_for_shorts(input_video):
         "-preset", "ultrafast",
         "-y", config.SHORTS_VIDEO
     ])
-    print('Formatted the video for youtube shorts.')
+    log.info('Formatted the video for shorts.')
 
 
 def get_authenticated_service():
@@ -207,6 +209,7 @@ def get_authenticated_service():
             credentials = flow.run_local_server(port=0)
         with open('token.json', 'w') as token:
             token.write(credentials.to_json())
+    log.info('Authenticated the user.')
     return build(YOUTUBE_API_SERVICE_NAME, API_VERSION, credentials=credentials), build(DRIVE_API_SERVICE_NAME, API_VERSION, credentials=credentials)
 
 
@@ -236,23 +239,25 @@ def resumable_upload(request):
     retry = 0
     while response is None:
         try:
-            print('Uploading file...')
             status, response = request.next_chunk()
             if response is not None:
                 if 'id' in response:
-                    print('Video id "%s" was successfully uploaded.' % response['id'])
+                    log.info('Video id "%s" was successfully uploaded.' % response['id'])
                 else:
-                    exit('The upload failed with an unexpected response: %s' % response)
+                    log.error('The upload failed with an unexpected response: %s' % response)
+                    exit()
+
         except Exception as e:
-            print(e)
+            log.error('An error occurred: %s' % e)
             if error is None:
                 error = e
             retry += 1
             if retry > 5:
-                exit('No longer attempting to retry.')
+                log.error('No longer attempting to retry.')
+                exit()
             max_sleep = 2 ** retry
             sleep_seconds = random.random() * max_sleep
-            print('Sleeping %f seconds and then retrying...' % sleep_seconds)
+            log.error('Sleeping %f seconds and then retrying...' % sleep_seconds)
             time.sleep(sleep_seconds)
 
 
@@ -345,7 +350,7 @@ def instagram_share(driver, description, humanlike, input_video):
     WebDriverWait(driver, 10000000).until(EC.presence_of_element_located((By.CSS_SELECTOR, ".x1lliihq.x1plvlek.xryxfnj.x1n2onr6.x193iq5w.xeuugli.x1fj9vlw.x13faqbe.x1vvkbs.x1s928wv.xhkezso.x1gmr53x.x1cpjm7i.x1fgarty.x1943h6x.x1i0vuye.x1ms8i2q.xo1l8bm.x5n08af.x2b8uid.x4zkp8e.xw06pyt.x10wh9bi.x1wdrske.x8viiok.x18hxmgj")))
     time.sleep(random.randint(1, 3)) if humanlike else None
 
-    print('Shared the video on instagram.')
+    log.info('Shared the video on Instagram.')
 
 
 def organize(today_date):
@@ -358,6 +363,8 @@ def organize(today_date):
     for file in files:
         if os.path.exists(file):
             os.rename(file, today_date + '/' + file)
+    
+    log.info('Organized the files.')
 
 
 def backup_to_cloud(folder_path, service):
@@ -379,7 +386,7 @@ def backup_to_cloud(folder_path, service):
         media = MediaFileUpload(folder_path + '/' + file)
         service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
-    print('Uploaded the files to the cloud.')
+    log.info('Backed up the files to the cloud.')
 
 
 def clean_up(folder_path):
@@ -392,7 +399,7 @@ def clean_up(folder_path):
         os.chmod(config.YOUTUBE_VIDEO, 0o777)
         os.remove(config.YOUTUBE_VIDEO)
 
-    print('Cleaned up the files from local.')
+    log.info('Cleaned up the files.')
 
 
 def post(trial, max_trials, driver, youtube_service):
